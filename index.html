@@ -127,7 +127,13 @@
       el.className = `status ${type}`.trim();
       el.textContent = text;
     }
-
+    
+    function clearStatusLater(el, ms = 4000, fallbackText = "待機中") {
+      window.setTimeout(() => {
+        el.className = "status";
+        el.textContent = fallbackText;
+      }, ms);
+    }
     function randomClientState() {
       return crypto.randomUUID();
     }
@@ -255,17 +261,16 @@
           "err",
           "新しいタブを開けませんでした。ポップアップブロックを確認してください。"
         );
+        clearStatusLater(els.configStatus, 5000);
         return;
       }
 
       setStatus(
         els.configStatus,
         "ok",
-        [
-          "認証を新しいタブで開始しました。",
-          authUrl
-        ].join("\n")
+        "認証を新しいタブで開始しました。"
       );
+      clearStatusLater(els.configStatus, 2500);
     }
 
     function clearLocalState() {

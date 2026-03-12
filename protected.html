@@ -42,7 +42,7 @@
         <div>残り時間</div><div id="remainingValue">-</div>
       </div>
       <div class="row" style="margin-top: 14px;">
-        <button id="reverifyBtn" type="button">/verify を再実行</button>
+        <button id="reauthBtn" type="button">再認証</button>
         <button id="logoutBtn" type="button" class="secondary">ログアウト</button>
       </div>
     </div>
@@ -93,7 +93,7 @@
 
       tokenOutput: document.getElementById("tokenOutput"),
       verifyOutput: document.getElementById("verifyOutput"),
-      reverifyBtn: document.getElementById("reverifyBtn"),
+      reauthBtn: document.getElementById("reauthBtn"),
       logoutBtn: document.getElementById("logoutBtn"),
       protectedContentCard: document.getElementById("protectedContentCard")
     };
@@ -299,7 +299,9 @@
       setStatus("warn", "ログアウトしました。");
     }
 
-    els.reverifyBtn.addEventListener("click", verifyToken);
+    els.reauthBtn.addEventListener("click", () => {
+      location.href = "./index.html";
+    });
     els.logoutBtn.addEventListener("click", logout);
 
     processPage();
