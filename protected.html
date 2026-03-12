@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Protected Page - Wplaceoki OAuth2 Test</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Protected Page</h1>
+      <p>
+        このページは callback 受信先であり、同時に認証済みページのサンプルです。
+        <code>code</code> の受信、<code>/token</code> 交換、<code>/verify</code> 結果、期限切れまでの残り時間をここで確認できます。
+      </p>
+      <div class="row">
+        <a class="button-link secondary" href="./index.html">設定ページへ戻る</a>
+      </div>
+      <div id="pageStatus" class="status warn">初期化中...</div>
+    </div>
+
+    <div class="card">
+      <h2>1. callback 情報</h2>
+      <div class="kv mono">
+        <div>code</div><div id="codeValue">-</div>
+        <div>error</div><div id="errorValue">-</div>
+        <div>client_state</div><div id="clientStateValue">-</div>
+        <div>expires_in</div><div id="expiresInValue">-</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>2. 認証状態</h2>
+      <div class="kv mono">
+        <div>sub</div><div id="subValue">-</div>
+        <div>aud</div><div id="audValue">-</div>
+        <div>guild_id</div><div id="guildValue">-</div>
+        <div>role_id</div><div id="roleValue">-</div>
+        <div>iat</div><div id="iatValue">-</div>
+        <div>exp</div><div id="expValue">-</div>
+        <div>残り時間</div><div id="remainingValue">-</div>
+      </div>
+      <div class="row" style="margin-top: 14px;">
+        <button id="reverifyBtn" type="button">/verify を再実行</button>
+        <button id="logoutBtn" type="button" class="secondary">ログアウト</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3. /token レスポンス</h2>
+      <textarea id="tokenOutput" class="mono" readonly></textarea>
+    </div>
+
+    <div class="card">
+      <h2>4. /verify レスポンス</h2>
+      <textarea id="verifyOutput" class="mono" readonly></textarea>
+    </div>
+
+    <div class="card" id="protectedContentCard" style="display: none;">
+      <h2>5. 保護された内容</h2>
+      <p>
+        ここが、認証に成功し、有効期限内のみ表示される保護コンテンツのサンプルです。
+      </p>
+      <div class="status ok">
+        トークンが有効なので閲覧可能です。
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STATE_KEY = "wplaceoki-oauth-test-state";
+    const TOKEN_KEY = "wplaceoki-oauth-test-token";
+    const TOKEN_RESPONSE_KEY = "wplaceoki-oauth-test-token-response";
+
+    const authBase = "https://oauth2.wplaceoki.com";
+    const redirectUri = location.href.split("?")[0].split("#")[0];
+
+    const els = {
+      pageStatus: document.getElementById("pageStatus"),
+      codeValue: document.getElementById("codeValue"),
+      errorValue: document.getElementById("errorValue"),
+      clientStateValue: document.getElementById("clientStateValue"),
+      expiresInValue: document.getElementById("expiresInValue"),
+
+      subValue: document.getElementById("subValue"),
+      audValue: document.getElementById("audValue"),
+      guildValue: document.getElementById("guildValue"),
+      roleValue: document.getElementById("roleValue"),
+      iatValue: document.getElementById("iatValue"),
+      expValue: document.getElementById("expValue"),
+      remainingValue: document.getElementById("remainingValue"),
+
+      tokenOutput: document.getElementById("tokenOutput"),
+      verifyOutput: document.getElementById("verifyOutput"),
+      reverifyBtn: document.getElementById("reverifyBtn"),
+      logoutBtn: document.getElementById("logoutBtn"),
+      protectedContentCard: document.getElementById("protectedContentCard")
+    };
+
+    let currentClaims = null;
+    let timerId = null;
+
+    function setStatus(type, text) {
+      els.pageStatus.className = `status ${type}`.trim();
+      els.pageStatus.textContent = text;
+    }
+
+    function parseQuery() {
+      const url = new URL(location.href);
+      return {
+        code: url.searchParams.get("code") || "",
+        error: url.searchParams.get("error") || "",
+        clientState: url.searchParams.get("client_state") || "",
+        expiresIn: url.searchParams.get("expires_in") || ""
+      };
+    }
+
+    function renderQueryInfo() {
+      const q = parseQuery();
+      els.codeValue.textContent = q.code || "-";
+      els.errorValue.textContent = q.error || "-";
+      els.clientStateValue.textContent = q.clientState || "-";
+      els.expiresInValue.textContent = q.expiresIn || "-";
+    }
+
+    function formatUnixTime(sec) {
+      if (!sec) return "-";
+      return new Date(sec * 1000).toLocaleString("ja-JP");
+    }
+
+    function formatRemaining(sec) {
+      if (sec <= 0) return "期限切れ";
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return `${h}時間 ${m}分 ${s}秒`;
+    }
+
+    function setProtectedVisible(visible) {
+      els.protectedContentCard.style.display = visible ? "" : "none";
+    }
+
+    function renderClaims(claims) {
+      currentClaims = claims;
+      els.subValue.textContent = claims.sub || "-";
+      els.audValue.textContent = claims.aud || "-";
+      els.guildValue.textContent = claims.guild_id || "-";
+      els.roleValue.textContent = claims.role_id || "-";
+      els.iatValue.textContent = formatUnixTime(claims.iat);
+      els.expValue.textContent = formatUnixTime(claims.exp);
+      updateRemaining();
+    }
+
+    function clearClaims() {
+      currentClaims = null;
+      els.subValue.textContent = "-";
+      els.audValue.textContent = "-";
+      els.guildValue.textContent = "-";
+      els.roleValue.textContent = "-";
+      els.iatValue.textContent = "-";
+      els.expValue.textContent = "-";
+      els.remainingValue.textContent = "-";
+    }
+
+    function updateRemaining() {
+      if (!currentClaims || !currentClaims.exp) {
+        els.remainingValue.textContent = "-";
+        return;
+      }
+
+      const now = Math.floor(Date.now() / 1000);
+      const remain = currentClaims.exp - now;
+      els.remainingValue.textContent = formatRemaining(remain);
+
+      if (remain <= 0) {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(TOKEN_RESPONSE_KEY);
+        clearInterval(timerId);
+        clearClaims();
+        setProtectedVisible(false);
+        setStatus("err", "トークンの有効期限が切れました。再認証してください。");
+      }
+    }
+
+    async function exchangeCode(code) {
+      setStatus("warn", "/token を呼び出しています...");
+
+      const res = await fetch(`${authBase}/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          redirect_uri: redirectUri
+        })
+      });
+
+      const data = await res.json();
+      els.tokenOutput.value = JSON.stringify(data, null, 2);
+
+      if (!data.ok) {
+        setProtectedVisible(false);
+        setStatus("err", `/token 失敗: ${data.error || res.status}`);
+        return false;
+      }
+
+      localStorage.setItem(TOKEN_KEY, data.access_token || "");
+      localStorage.setItem(TOKEN_RESPONSE_KEY, JSON.stringify(data));
+      return true;
+    }
+
+    async function verifyToken() {
+      const token = localStorage.getItem(TOKEN_KEY) || "";
+
+      if (!token) {
+        setProtectedVisible(false);
+        clearClaims();
+        setStatus("warn", "保存済みトークンがありません。認証を開始してください。");
+        return false;
+      }
+
+      const res = await fetch(`${authBase}/verify`, {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+
+      const data = await res.json();
+      els.verifyOutput.value = JSON.stringify(data, null, 2);
+
+      if (!data.ok || !data.claims) {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(TOKEN_RESPONSE_KEY);
+        clearClaims();
+        setProtectedVisible(false);
+        setStatus("err", `トークンが無効です: ${data.error || res.status}`);
+        return false;
+      }
+
+      renderClaims(data.claims);
+      setProtectedVisible(true);
+      setStatus("ok", "トークンは有効です。保護ページを利用できます。");
+
+      clearInterval(timerId);
+      timerId = setInterval(updateRemaining, 1000);
+      return true;
+    }
+
+    async function processPage() {
+      renderQueryInfo();
+
+      const q = parseQuery();
+      const expectedState = localStorage.getItem(STATE_KEY) || "";
+
+      if (q.error) {
+        setProtectedVisible(false);
+        setStatus("err", `認証失敗: ${q.error}`);
+        return;
+      }
+
+      if (q.code) {
+        if (!q.clientState || !expectedState || q.clientState !== expectedState) {
+          setProtectedVisible(false);
+          setStatus("err", "client_state が一致しません。");
+          return;
+        }
+
+        const exchanged = await exchangeCode(q.code);
+        if (!exchanged) {
+          return;
+        }
+
+        history.replaceState({}, "", redirectUri);
+      }
+
+      const tokenResponseRaw = localStorage.getItem(TOKEN_RESPONSE_KEY);
+      if (tokenResponseRaw) {
+        try {
+          els.tokenOutput.value = JSON.stringify(JSON.parse(tokenResponseRaw), null, 2);
+        } catch {
+          els.tokenOutput.value = tokenResponseRaw;
+        }
+      }
+
+      await verifyToken();
+    }
+
+    function logout() {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(TOKEN_RESPONSE_KEY);
+      localStorage.removeItem(STATE_KEY);
+      clearInterval(timerId);
+      clearClaims();
+      setProtectedVisible(false);
+      els.tokenOutput.value = "";
+      els.verifyOutput.value = "";
+      history.replaceState({}, "", redirectUri);
+      renderQueryInfo();
+      setStatus("warn", "ログアウトしました。");
+    }
+
+    els.reverifyBtn.addEventListener("click", verifyToken);
+    els.logoutBtn.addEventListener("click", logout);
+
+    processPage();
+  </script>
+</body>
+</html>

@@ -11,40 +11,335 @@
     <div class="card">
       <h1>Wplaceoki Discord OAuth2 Test</h1>
       <p>
-        このサイトは、<code>https://oauth2.wplaceoki.com</code> を利用した
-        Discord ロール認証の疎通確認用ページです。
+        テスト用 KV 設定を保存し、その設定で Discord OAuth2 認証を開始します。
+        認証結果や token / verify の内容は遷移先の <code>protected.html</code> で確認できます。
       </p>
-      <div class="status ok">
-        GitHub Pages などの静的ホスティング上で公開し、
-        callback URL を KV に登録してテストします。
+      <div id="topStatus" class="status warn">初期化中...</div>
+    </div>
+
+    <div class="card">
+      <h2>1. 固定設定</h2>
+      <div class="kv mono">
+        <div>authBase</div><div id="authBaseValue">-</div>
+        <div>redirect_uri</div><div id="redirectUriValue">-</div>
       </div>
+      <p class="small">
+        上記 2 項目は固定です。テスト用 KV 書き込みも、この <code>redirect_uri</code> の 1 件だけを対象にします。
+      </p>
     </div>
 
     <div class="card">
-      <h2>できること</h2>
-      <ul class="list">
-        <li>Discord OAuth2 認証開始</li>
-        <li>callback の <code>code</code> / <code>error</code> 確認</li>
-        <li><code>/token</code> 交換</li>
-        <li><code>/verify</code> によるトークン確認</li>
-      </ul>
-    </div>
-
-    <div class="card">
-      <h2>事前に必要なこと</h2>
-      <ul class="list">
-        <li><code>test.html</code> の URL を callback URL として使う</li>
-        <li>その URL を <code>@ultimate_1113</code> に KV 登録依頼する</li>
-        <li><code>wplaceoki.com</code> 配下のドメインで公開する</li>
-      </ul>
-    </div>
-
-    <div class="card">
-      <h2>遷移</h2>
-      <div class="row">
-        <a class="button-link" href="./test.html">テストページへ進む</a>
+      <h2>2. テスト用設定</h2>
+      <div class="grid">
+        <div>
+          <label for="roleIdInput">roleId</label>
+          <input id="roleIdInput" class="mono" placeholder="123456789012345678" />
+        </div>
+        <div>
+          <label for="reauthSecInput">reauthSec (秒)</label>
+          <input id="reauthSecInput" class="mono" type="number" min="60" max="86400" step="1" placeholder="21600" />
+        </div>
       </div>
+      <div class="row" style="margin-top: 14px;">
+        <button id="loadConfigBtn" type="button" class="secondary">現在設定を取得</button>
+        <button id="saveTestConfigBtn" type="button">テスト設定を保存</button>
+        <button id="startAuthBtn" type="button">Discord で認証</button>
+        <button id="clearLocalBtn" type="button" class="secondary">ローカル状態を削除</button>
+      </div>
+      <div id="configStatus" class="status">待機中</div>
+    </div>
+
+    <div class="card">
+      <h2>3. 現在のテスト用 KV 設定</h2>
+      <textarea id="currentConfigOutput" class="mono" readonly></textarea>
+    </div>
+
+    <div class="card">
+      <h2>4. 依頼テンプレ作成フォーム</h2>
+      <p>
+        こちらは本番・別サイト向けの依頼文を作るためのフォームです。
+        テスト用 KV 書き込みとは別用途です。
+      </p>
+      <div class="grid">
+        <div>
+          <label for="reqSiteName">対象サイト名</label>
+          <input id="reqSiteName" placeholder="app.wplaceoki.com" />
+        </div>
+        <div>
+          <label for="reqRedirectUri">redirect_uri</label>
+          <input id="reqRedirectUri" class="mono" placeholder="https://app.wplaceoki.com/auth/callback" />
+        </div>
+        <div>
+          <label for="reqRoleId">roleId</label>
+          <input id="reqRoleId" class="mono" placeholder="123456789012345678" />
+        </div>
+        <div>
+          <label for="reqReauthSec">reauthSec (秒)</label>
+          <input id="reqReauthSec" class="mono" type="number" min="60" step="1" placeholder="21600" />
+        </div>
+      </div>
+      <div style="margin-top: 16px;">
+        <label for="reqPurpose">用途 / 補足</label>
+        <textarea id="reqPurpose" placeholder="一般会員向けサイト / 管理画面 / テスト用途 など"></textarea>
+      </div>
+      <div class="row" style="margin-top: 14px;">
+        <button id="buildTemplateBtn" type="button">依頼テンプレ生成</button>
+        <button id="mailtoBtn" type="button" class="secondary">メール作成</button>
+      </div>
+      <textarea id="requestTemplateOutput" class="mono" readonly></textarea>
     </div>
   </div>
+
+  <script>
+    const STATE_KEY = "wplaceoki-oauth-test-state";
+    const TOKEN_KEY = "wplaceoki-oauth-test-token";
+    const TOKEN_RESPONSE_KEY = "wplaceoki-oauth-test-token-response";
+
+    const els = {
+      topStatus: document.getElementById("topStatus"),
+      authBaseValue: document.getElementById("authBaseValue"),
+      redirectUriValue: document.getElementById("redirectUriValue"),
+
+      roleIdInput: document.getElementById("roleIdInput"),
+      reauthSecInput: document.getElementById("reauthSecInput"),
+      loadConfigBtn: document.getElementById("loadConfigBtn"),
+      saveTestConfigBtn: document.getElementById("saveTestConfigBtn"),
+      startAuthBtn: document.getElementById("startAuthBtn"),
+      clearLocalBtn: document.getElementById("clearLocalBtn"),
+      configStatus: document.getElementById("configStatus"),
+      currentConfigOutput: document.getElementById("currentConfigOutput"),
+
+      reqSiteName: document.getElementById("reqSiteName"),
+      reqRedirectUri: document.getElementById("reqRedirectUri"),
+      reqRoleId: document.getElementById("reqRoleId"),
+      reqReauthSec: document.getElementById("reqReauthSec"),
+      reqPurpose: document.getElementById("reqPurpose"),
+      buildTemplateBtn: document.getElementById("buildTemplateBtn"),
+      mailtoBtn: document.getElementById("mailtoBtn"),
+      requestTemplateOutput: document.getElementById("requestTemplateOutput")
+    };
+
+    let authBase = "https://oauth2.wplaceoki.com";
+    let redirectUri = `${location.origin}/protected.html`;
+    let configLimits = { reauthMinSec: 60, reauthMaxSec: 86400 };
+
+    function setStatus(el, type, text) {
+      el.className = `status ${type}`.trim();
+      el.textContent = text;
+    }
+
+    function randomClientState() {
+      return crypto.randomUUID();
+    }
+
+    function getAuthorizeUrl() {
+      const clientState = randomClientState();
+      localStorage.setItem(STATE_KEY, clientState);
+
+      const url = new URL(`${authBase}/authorize`);
+      url.searchParams.set("redirect_uri", redirectUri);
+      url.searchParams.set("client_state", clientState);
+      return url.toString();
+    }
+
+    async function loadTestConfig() {
+      try {
+        setStatus(els.configStatus, "warn", "現在設定を取得しています...");
+
+        const res = await fetch(`${authBase}/test/config`);
+        const data = await res.json();
+
+        els.currentConfigOutput.value = JSON.stringify(data, null, 2);
+
+        if (!data.ok) {
+          setStatus(els.configStatus, "err", `取得失敗: ${data.error || res.status}`);
+          return;
+        }
+
+        authBase = data.auth_base;
+        redirectUri = data.redirect_uri;
+        configLimits = data.limits || configLimits;
+
+        els.authBaseValue.textContent = authBase;
+        els.redirectUriValue.textContent = redirectUri;
+
+        if (data.config) {
+          els.roleIdInput.value = data.config.roleId || "";
+          els.reauthSecInput.value = String(data.config.reauthSec || "");
+        }
+
+        setStatus(els.configStatus, "ok", "現在設定を取得しました。");
+        setStatus(
+          els.topStatus,
+          "ok",
+          [
+            "テストページの準備ができました。",
+            `authBase: ${authBase}`,
+            `redirect_uri: ${redirectUri}`
+          ].join("\n")
+        );
+      } catch (error) {
+        setStatus(
+          els.configStatus,
+          "err",
+          `取得失敗: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+
+    async function saveTestConfig() {
+      const roleId = els.roleIdInput.value.trim();
+      const reauthSec = Number(els.reauthSecInput.value.trim());
+
+      if (!/^\d{17,20}$/.test(roleId)) {
+        setStatus(els.configStatus, "err", "roleId は 17〜20 桁の数字で入力してください。");
+        return;
+      }
+
+      if (!Number.isInteger(reauthSec)) {
+        setStatus(els.configStatus, "err", "reauthSec は整数で入力してください。");
+        return;
+      }
+
+      if (reauthSec < configLimits.reauthMinSec || reauthSec > configLimits.reauthMaxSec) {
+        setStatus(
+          els.configStatus,
+          "err",
+          `reauthSec は ${configLimits.reauthMinSec}〜${configLimits.reauthMaxSec} 秒で入力してください。`
+        );
+        return;
+      }
+
+      try {
+        setStatus(els.configStatus, "warn", "テスト用 KV 設定を保存しています...");
+
+        const res = await fetch(`${authBase}/test/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roleId, reauthSec })
+        });
+
+        const data = await res.json();
+        els.currentConfigOutput.value = JSON.stringify(data, null, 2);
+
+        if (!data.ok) {
+          setStatus(els.configStatus, "err", `保存失敗: ${data.error || res.status}`);
+          return;
+        }
+
+        setStatus(
+          els.configStatus,
+          "ok",
+          [
+            "テスト用 KV 設定を保存しました。",
+            `roleId: ${roleId}`,
+            `reauthSec: ${reauthSec}`
+          ].join("\n")
+        );
+      } catch (error) {
+        setStatus(
+          els.configStatus,
+          "err",
+          `保存失敗: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+
+    function startAuth() {
+      const authUrl = getAuthorizeUrl();
+      const opened = window.open(authUrl, "_blank", "noopener,noreferrer");
+
+      if (!opened) {
+        setStatus(
+          els.configStatus,
+          "err",
+          "新しいタブを開けませんでした。ポップアップブロックを確認してください。"
+        );
+        return;
+      }
+
+      setStatus(
+        els.configStatus,
+        "ok",
+        [
+          "認証を新しいタブで開始しました。",
+          authUrl
+        ].join("\n")
+      );
+    }
+
+    function clearLocalState() {
+      localStorage.removeItem(STATE_KEY);
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(TOKEN_RESPONSE_KEY);
+      setStatus(els.configStatus, "warn", "ローカル状態を削除しました。");
+    }
+
+    function buildRequestTemplate() {
+      const siteName = els.reqSiteName.value.trim();
+      const reqRedirectUri = els.reqRedirectUri.value.trim();
+      const reqRoleId = els.reqRoleId.value.trim();
+      const reqReauthSec = els.reqReauthSec.value.trim();
+      const reqPurpose = els.reqPurpose.value.trim();
+
+      const lines = [
+        "@ultimate_1113",
+        "Discord ロール認証の設定登録をお願いします。",
+        "",
+        `- 対象サイト: ${siteName || "<対象サイト名>"}`,
+        `- redirect_uri: ${reqRedirectUri || "<redirect_uri>"}`,
+        `- roleId: ${reqRoleId || "<roleId>"}`,
+        `- reauthSec: ${reqReauthSec || "<reauthSec>"}`,
+        "- enabled: true",
+        `- 用途: ${reqPurpose || "<用途>"}`,
+      ];
+
+      const text = lines.join("\n");
+      els.requestTemplateOutput.value = text;
+      return text;
+    }
+
+    function openMailto() {
+      const body = buildRequestTemplate();
+      const subject = "Discord ロール認証 設定依頼";
+      const mailto = `mailto:ultimate_1113.tech@wplaceoki.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      location.href = mailto;
+    }
+
+    function initRequestFormDefaults() {
+      els.reqSiteName.value = location.host;
+      els.reqRedirectUri.value = redirectUri;
+      els.reqRoleId.value = els.roleIdInput.value.trim();
+      els.reqReauthSec.value = els.reauthSecInput.value.trim() || "21600";
+      els.reqPurpose.value = "OAuth2 テスト / 認証導入依頼";
+      buildRequestTemplate();
+    }
+
+    function syncRequestFieldsFromTestInputs() {
+      if (!els.reqRoleId.value.trim()) {
+        els.reqRoleId.value = els.roleIdInput.value.trim();
+      }
+      if (!els.reqReauthSec.value.trim()) {
+        els.reqReauthSec.value = els.reauthSecInput.value.trim();
+      }
+    }
+
+    async function init() {
+      els.loadConfigBtn.addEventListener("click", loadTestConfig);
+      els.saveTestConfigBtn.addEventListener("click", saveTestConfig);
+      els.startAuthBtn.addEventListener("click", startAuth);
+      els.clearLocalBtn.addEventListener("click", clearLocalState);
+      els.buildTemplateBtn.addEventListener("click", buildRequestTemplate);
+      els.mailtoBtn.addEventListener("click", openMailto);
+
+      els.roleIdInput.addEventListener("input", syncRequestFieldsFromTestInputs);
+      els.reauthSecInput.addEventListener("input", syncRequestFieldsFromTestInputs);
+
+      await loadTestConfig();
+      initRequestFormDefaults();
+    }
+
+    init();
+  </script>
 </body>
 </html>
