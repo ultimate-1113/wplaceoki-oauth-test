@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wplaceoki OAuth2 Test</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Wplaceoki Discord OAuth2 Test</h1>
+      <p>
+        このサイトは、<code>https://oauth2.wplaceoki.com</code> を利用した
+        Discord ロール認証の疎通確認用ページです。
+      </p>
+      <div class="status ok">
+        GitHub Pages などの静的ホスティング上で公開し、
+        callback URL を KV に登録してテストします。
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>できること</h2>
+      <ul class="list">
+        <li>Discord OAuth2 認証開始</li>
+        <li>callback の <code>code</code> / <code>error</code> 確認</li>
+        <li><code>/token</code> 交換</li>
+        <li><code>/verify</code> によるトークン確認</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>事前に必要なこと</h2>
+      <ul class="list">
+        <li><code>test.html</code> の URL を callback URL として使う</li>
+        <li>その URL を <code>@ultimate_1113</code> に KV 登録依頼する</li>
+        <li><code>wplaceoki.com</code> 配下のドメインで公開する</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>遷移</h2>
+      <div class="row">
+        <a class="button-link" href="./test.html">テストページへ進む</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
