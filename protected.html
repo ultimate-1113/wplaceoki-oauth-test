@@ -12,7 +12,8 @@
       <h1>Protected Page</h1>
       <p>
         このページは callback 受信先であり、同時に認証済みページのサンプルです。
-        <code>code</code> の受信、<code>/token</code> 交換、<code>/verify</code> 結果、期限切れまでの残り時間をここで確認できます。
+        <code>code</code> の受信、<code>/token</code> 交換、<code>/verify</code> 結果、
+        <code>/session/me</code>、期限切れまでの残り時間をここで確認できます。
       </p>
       <div class="row">
         <a class="button-link secondary" href="./index.html">設定ページへ戻る</a>
@@ -57,8 +58,13 @@
       <textarea id="verifyOutput" class="mono" readonly></textarea>
     </div>
 
+    <div class="card">
+      <h2>5. /session/me レスポンス</h2>
+      <textarea id="sessionOutput" class="mono" readonly></textarea>
+    </div>
+
     <div class="card" id="protectedContentCard" style="display: none;">
-      <h2>5. 保護された内容</h2>
+      <h2>6. 保護された内容</h2>
       <p>
         ここが、認証に成功し、有効期限内のみ表示される保護コンテンツのサンプルです。
       </p>
@@ -73,7 +79,7 @@
     const TOKEN_KEY = "wplaceoki-oauth-test-token";
     const TOKEN_RESPONSE_KEY = "wplaceoki-oauth-test-token-response";
 
-    const authBase = "https://oauth2.wplaceoki.com";
+    const authBase = "https://auth.wplaceoki.com";
     const redirectUri = location.href.split("?")[0].split("#")[0];
 
     const els = {
@@ -93,6 +99,7 @@
 
       tokenOutput: document.getElementById("tokenOutput"),
       verifyOutput: document.getElementById("verifyOutput"),
+      sessionOutput: document.getElementById("sessionOutput"),
       reauthBtn: document.getElementById("reauthBtn"),
       logoutBtn: document.getElementById("logoutBtn"),
       protectedContentCard: document.getElementById("protectedContentCard")
@@ -246,6 +253,25 @@
       return true;
     }
 
+    async function loadSessionMe() {
+      try {
+        const url = new URL(`${authBase}/session/me`);
+        url.searchParams.set("redirect_uri", redirectUri);
+
+        const res = await fetch(url, {
+          credentials: "include"
+        });
+        const data = await res.json();
+        els.sessionOutput.value = JSON.stringify(data, null, 2);
+      } catch (error) {
+        els.sessionOutput.value = JSON.stringify(
+          { ok: false, error: error instanceof Error ? error.message : String(error) },
+          null,
+          2
+        );
+      }
+    }
+
     async function processPage() {
       renderQueryInfo();
 
@@ -254,6 +280,7 @@
 
       if (q.error) {
         setProtectedVisible(false);
+        await loadSessionMe();
         setStatus("err", `認証失敗: ${q.error}`);
         return;
       }
@@ -261,12 +288,14 @@
       if (q.code) {
         if (!q.clientState || !expectedState || q.clientState !== expectedState) {
           setProtectedVisible(false);
+          await loadSessionMe();
           setStatus("err", "client_state が一致しません。");
           return;
         }
 
         const exchanged = await exchangeCode(q.code);
         if (!exchanged) {
+          await loadSessionMe();
           return;
         }
 
@@ -283,9 +312,17 @@
       }
 
       await verifyToken();
+      await loadSessionMe();
     }
 
-    function logout() {
+    async function logout() {
+      try {
+        await fetch(`${authBase}/logout`, {
+          method: "POST",
+          credentials: "include"
+        });
+      } catch {}
+
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(TOKEN_RESPONSE_KEY);
       localStorage.removeItem(STATE_KEY);
@@ -294,6 +331,7 @@
       setProtectedVisible(false);
       els.tokenOutput.value = "";
       els.verifyOutput.value = "";
+      els.sessionOutput.value = "";
       history.replaceState({}, "", redirectUri);
       renderQueryInfo();
       setStatus("warn", "ログアウトしました。");
@@ -302,7 +340,10 @@
     els.reauthBtn.addEventListener("click", () => {
       location.href = "./index.html";
     });
-    els.logoutBtn.addEventListener("click", logout);
+
+    els.logoutBtn.addEventListener("click", () => {
+      logout();
+    });
 
     processPage();
   </script>
