@@ -146,9 +146,7 @@
       try {
         setStatus(els.configStatus, "warn", "/health を確認しています...");
 
-        const res = await fetch(`${authBase}/health`, {
-          credentials: "include"
-        });
+        const res = await fetch(`${authBase}/health`);
         const data = await res.json();
 
         els.currentConfigOutput.value = JSON.stringify(data, null, 2);
